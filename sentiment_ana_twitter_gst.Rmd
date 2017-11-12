@@ -1,0 +1,458 @@
+---
+title: "twitter_sentiment_analysis_gst"
+author: "Amisha Tiwari"
+date: "23 August 2017"
+output: html_document
+---
+
+```{r}
+text <- c("Because I could not stop for Death -",
+          "He kindly stopped for me -",
+          "The Carriage held but just Ourselves -",
+          "and Immortality")
+
+text
+```
+
+```{r}
+library(dplyr)
+text_df <- data_frame(line = 1:4, text = text)
+
+text_df
+
+```
+
+```{r}
+text_df <- data_frame(text)
+
+text_df
+```
+
+```{r}
+library(tidytext)
+text_df %>%
+  unnest_tokens(word, text)
+```
+
+
+```{r}
+library("twitteR")
+library("ROAuth")
+library("devtools")
+
+library("ggplot2")
+library("wordcloud")
+
+library("RColorBrewer")
+library("tm")
+library("SnowballC")
+
+library(scales)
+```
+
+```{r}
+install.packages("scales")
+```
+
+```{r}
+
+consumer_key <- 'KzcxHwJAs8BSgOQH7AZRz2zPf'
+consumer_secret <- 'AdkNaRYzVDUa9Ab7nKvn7aoTgGwdENXmgx43vp9bnfOwsiLJmA'
+access_token <- '899712601822683136-8UNRcxvJD3VlAPvvWASQje6unHsg3qr'
+access_secret <-  'MNDk93Y9G0AIXWSt7ChNYPAk36khmymwIgdGvjOAunxcu'
+
+setup_twitter_oauth(consumer_key,consumer_secret,access_token,access_secret)
+
+
+```
+
+```{r}
+library(dplyr)
+list <- searchTwitter("demonetization", n=500,lang="en")
+df <- do.call("rbind", lapply(list, as.data.frame))
+df
+View(df)
+txt = sapply(list, function(t) t$getText() )
+df_text_twitter <- data_frame(txt)
+df_text_twitter <- unique(df_text_twitter)
+df_text_twitter
+```
+
+
+```{r}
+library(dplyr)
+list <- searchTwitter("demonetization", n=500,lang="en")
+View(data.frame(list))
+txt = sapply(list, function(t) t$getText())
+txt = gsub("[[:punct:]]", "", txt)
+txt = gsub("[[:punct:]]", "", txt)
+txt = gsub("[[:digit:]]", "", txt)
+txt = gsub("http\\w+", "", txt)
+txt = gsub("[ \t]{2,}", "", txt)
+txt = gsub("^\\s+|\\s+$", "", txt)
+txt = gsub("[^[:alpha:][:space:]]*", "", txt)
+txt
+try.error = function(x)
+{
+  y = NA
+  try_error = tryCatch(tolower(x), error=function(e) e)
+  if (!inherits(try_error, "error"))
+    y = tolower(x)
+  return(y)
+}
+txt = sapply(txt, try.error)
+txt = txt[!is.na(txt)]
+names(txt) = NULL
+df_text_twitter <- data_frame(txt)
+df_text_twitter <- unique(df_text_twitter)
+df_text_twitter
+```
+
+
+```{r}
+#optional
+df_text_twitter2 <- data.frame(txt)
+
+df_text_twitter2
+```
+
+
+```{r}
+
+library(tidytext)
+df_text_twitter_words <- df_text_twitter %>%
+  unnest_tokens(word,txt)
+
+df_text_twitter_words
+```
+
+```{r}
+#Often in text analysis, we will want to remove stop words; stop words are words that are #not useful for an analysis, typically extremely common words such as "the", "of", "to", #and so forth in English. We can remove stop words (kept in the tidytext dataset #stop_words) with an anti_join().
+
+data(stop_words)
+
+df_text_twitter_words <- df_text_twitter_words %>%
+  anti_join(stop_words)
+
+df_text_twitter_words
+
+```
+
+
+```{r}
+df_text_twitter_words %>%
+  count(word, sort = TRUE) 
+```
+
+
+
+```{r}
+library(ggplot2)
+
+ df_text_twitter_words %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 10) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip()
+ 
+```
+
+```{r}
+df_text_twitter_words_unique <- unique(df_text_twitter_words)
+words <- df_text_twitter_words_unique$word
+myCorpus <- Corpus(VectorSource(words))
+
+m <- as.matrix(tdm)
+# calculate the frequency of words and sort it by frequency
+words.freq <- sort(rowSums(m), decreasing = T)
+# colors
+pal <- brewer.pal(9, "BuGn")[-(1:4)]
+
+# plot word cloud
+library(wordcloud)
+wordcloud(words, freq = words.freq, min.freq = 4,
+random.order = F, colors = pal)
+```
+
+```{r}
+sink('myfile.txt')
+print(df_text_twitter_words_unique,right=F)
+sink()
+```
+
+
+```{r}
+#The tidytext package contains several sentiment lexicons in the sentiments dataset.
+# for this refer to page tidytextmining/sentiment.html
+library(tidytext)
+sentiments
+```
+
+```{r}
+get_sentiments("nrc")
+```
+
+```{r}
+sentiment_twitter <- df_text_twitter_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = T) %>%
+    ungroup()
+sentiment_twitter
+```
+
+```{r}
+tmp <- sentiment_twitter %>%
+    mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+    mutate(word = reorder(word, n))
+
+ggplot(data = tmp, mapping = aes(x = word, y = n, fill = sentiment)) +
+    geom_bar(alpha = 0.8, stat = "identity") +
+    labs(y = "Contribution to sentiment", x = NULL) +
+    coord_flip()
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+df_text_twitter <- df_text_twitter_words %>%
+    mutate(linenumber = row_number()) %>%
+    ungroup()
+
+bing <- df_text_twitter %>%
+    inner_join(get_sentiments("bing")) %>%
+  group_by(index=linenumber %/% 2) %>%
+    count(sentiment) %>%
+    spread(sentiment, n, fill = 0) %>%
+    mutate(method = "BING", sentiment = positive - negative)
+
+nrc <- df_text_twitter %>%
+    inner_join(get_sentiments("nrc")) %>%
+    filter(sentiment %in% c("positive", "negative")) %>%
+  group_by(index=linenumber %/% 2) %>%
+    count(sentiment) %>%
+    spread(sentiment, n, fill = 0) %>%
+    mutate(method = "NRC", sentiment = positive - negative)
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+df_text_twitter <- df_text_twitter_words %>%
+    mutate(linenumber = row_number()) %>%
+    ungroup()
+
+bing <- df_text_twitter %>%
+    inner_join(get_sentiments("bing")) %>%
+    count(sentiment, index=linenumber %/% 80) %>%
+    spread(sentiment, n, fill = 0) %>%
+    mutate(method = "BING", sentiment = positive - negative)
+
+nrc <- df_text_twitter %>%
+    inner_join(get_sentiments("nrc")) %>%
+    filter(sentiment %in% c("positive", "negative")) %>%
+  
+    count(sentiment, index=linenumber %/% 80) %>%
+    spread(sentiment, n, fill = 0) %>%
+    mutate(method = "NRC", sentiment = positive - negative)
+```
+
+
+
+```{r}
+cols_idx = c("index", "sentiment", "method")
+sentiment_evaluations <- bind_rows(bing[,cols_idx], nrc[,cols_idx])
+
+ggplot(data = sentiment_evaluations, mapping = aes(x = index, y = sentiment, fill = method)) +
+    geom_bar(alpha = 0.7, stat = "identity", show.legend = F) +
+    facet_wrap(facets = ~ method, ncol = 1, scales = "free_y")
+```
+
+
+```{r}
+tmp <- sentiment %>%
+  filter(n >=0) %>%
+    mutate(n = ifelse(sentiment == "positive", -n, n)) %>%
+    mutate(word = reorder(word, n))
+
+ggplot(data = tmp, mapping = aes(x = word, y = n, fill = sentiment)) +
+    geom_bar(alpha = 0.8, stat = "identity") +
+    labs(y = "Contribution to sentiment", x = NULL) +
+    coord_flip()
+```
+```
+
+
+```{r}
+list1 <- searchTwitter("demonetization india", n=500,lang="en")
+tweet1=list()
+	tweet1 <- c(tweet1,list1)
+	
+	tweet1 <- unique(tweet1)
+	df_tweet1 <- do.call("rbind", lapply(tweet1, as.data.frame))
+	df_tweet1$text
+```
+
+
+```{r}
+# tweet #190
+df_tweet1[190, c("id", "created", "screenName", "replyToSN",
+"favoriteCount", "retweetCount", "longitude", "latitude", "text")]
+```
+
+```{r}
+writeLines(strwrap(df_tweet1$text[190], 60))
+tweets.df <- df_tweet1
+tweets.df$text
+```
+
+```{r}
+data <- readLines("https://www.r-bloggers.com/wp-content/uploads/2016/01/vent.txt") # from: http://www.wvgazettemail.com/
+df <- data_frame(data)
+textdata = data
+textdata
+```
+
+```{r}
+textdata = gsub("[[:punct:]]", "", textdata)
+textdata = gsub("[[:punct:]]", "", textdata)
+textdata = gsub("[[:digit:]]", "", textdata)
+textdata = gsub("http\\w+", "", textdata)
+textdata = gsub("[ \t]{2,}", "", textdata)
+textdata = gsub("^\\s+|\\s+$", "", textdata)
+try.error = function(x)
+{
+  y = NA
+  try_error = tryCatch(tolower(x), error=function(e) e)
+  if (!inherits(try_error, "error"))
+    y = tolower(x)
+  return(y)
+}
+textdata = sapply(textdata, try.error)
+textdata = textdata[!is.na(textdata)]
+names(textdata) = NULL
+textdata
+df1 = data_frame(textdata)
+```
+
+```{r}
+library(tidytext)
+df1 %>%
+  unnest_tokens(word,textdata)
+```
+
+
+```{r}
+#text cleaning
+library(tm)
+# build a corpus, and specify the source to be character vectors
+myCorpus <- Corpus(VectorSource(tweets.df$text))
+# convert to lower case
+#myCorpus <- tm_map(myCorpus, content_transformer(tolower))
+# remove URLs
+removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+myCorpus <- tm_map(myCorpus, content_transformer(removeURL))
+# remove anything other than English letters or space
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+myCorpus <- tm_map(myCorpus, content_transformer(removeNumPunct))
+# remove stopwords
+myStopwords <- c(setdiff(stopwords('english'), c("r", "big")),
+"use", "see", "used", "via", "amp")
+myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+# remove extra whitespace
+myCorpus <- tm_map(myCorpus, stripWhitespace)
+# keep a copy for stem completion later
+myCorpusCopy <- myCorpus
+writeLines(strwrap(myCorpus[[190]]$content, 60))
+```
+
+
+```{r}
+library(dplyr)
+tweets.df$text <- c(tweets.df$text)
+myCorpusCopy <- data_frame(line = 1:500, text = tweets.df$text)
+
+myCorpusCopy
+```
+
+
+```{r}
+library(tidytext)
+
+myCorpusCopy %>%
+  unnest_tokens(word,tweets.df$text)
+```
+
+
+```{r}
+#Stemming and Stem Completion 2
+myCorpus <- tm_map(myCorpus, stemDocument) # stem words
+writeLines(strwrap(myCorpus[[190]]$content, 60))
+```
+
+```{r}
+stemCompletion2 <- function(x, dictionary) {
+x <- unlist(strsplit(as.character(x), " "))
+x <- x[x != ""]
+x <- stemCompletion(x, dictionary=dictionary)
+x <- paste(x, sep="", collapse=" ")
+PlainTextDocument(stripWhitespace(x))
+}
+myCorpus <- lapply(myCorpus, stemCompletion2, dictionary=myCorpusCopy)
+myCorpus <- Corpus(VectorSource(myCorpus))
+writeLines(strwrap(myCorpus[[190]]$content, 60))
+```
+
+```{r}
+# just for algo
+#issues in stem (demoneti vs demonetization)
+# count word frequence
+wordFreq <- function(corpus, word) {
+results <- lapply(corpus,
+function(x) { grep(as.character(x), pattern=paste0("\\<",word)) }
+)
+sum(unlist(results))
+}
+n.demoneti <- wordFreq(myCorpusCopy, "demoneti")
+n.demonetization <- wordFreq(myCorpusCopy, "demonetization")
+cat(n.demoneti, n.demonetization)
+
+# replace oldword with newword
+replaceWord <- function(corpus, oldword, newword) {
+tm_map(corpus, content_transformer(gsub),
+pattern=oldword, replacement=newword)
+}
+myCorpus <- replaceWord(myCorpus, "demoneti", "demonetization")
+
+```
+
+
+```{r}
+
+#myCorpus <- replaceWord(myCorpus, "demonetiz", "demonetization")
+#myCorpus <- replaceWord(myCorpus, "scienc", "science")
+```
+
+
+```{r}
+#top frequent terms
+(freq.terms <- findFreqTerms(tdm, lowfreq = 100))
+```
+
+```{r}
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq >= 100)
+df <- data.frame(term = names(term.freq), freq = term.freq)
+```
+
+```{r}
+library(ggplot2)
+ggplot(df, aes(x=term, y=freq)) + geom_bar(stat="identity") +
+xlab("Terms") + ylab("Count") + coord_flip() +
+theme(axis.text=element_text(size=7))
+```
+
